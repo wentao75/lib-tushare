@@ -6,18 +6,14 @@ const FlowControl = require("@wt/lib-flowcontrol");
 const pino = require("pino");
 
 const logger = pino({
-    // level: ,
+    level: process.env.LOGGER || "info",
     prettyPrint: {
         levelFirst: true,
-        translateTime: "SYS:standard",
+        translateTime: "SYS:yyyy-yy-dd HH:MM:ss.l",
         crlf: true,
     },
     prettifier: require("pino-pretty"),
 });
-
-if (process.env.LOGGER) {
-    logger.level = process.env.LOGGER;
-}
 
 // const token = ""
 const tushareUrl = "http://api.tushare.pro";
@@ -247,6 +243,7 @@ const FLOW_CONFIG = {
     [apiNames.daily]: { maxFlow: 800 },
     [apiNames.indexDaily]: { maxFlow: 300 },
     [apiNames.adjustFactor]: { maxFlow: 800 },
+    [apiNames.dailyBasic]: { maxFlow: 400 },
     [DEFAULT_FLOWCONTROL_NAME]: { maxFlow: 800 },
 };
 
@@ -720,7 +717,23 @@ async function dailyBasic(tsCode, startDate = null, endDate = null) {
             start_date: startDate,
             end_date: endDate,
         },
-        apiFields.dailyBasic
+        apiFields.dailyBasic,
+        async (params, retData) => {
+            // let endDate = ""
+            if (retData && retData.length > 0) {
+                let lastDate = moment(
+                    retData[retData.length - 1].trade_date,
+                    "YYYYMMDD"
+                );
+                // endDate =
+                return {
+                    ts_code: tsCode,
+                    start_date: startDate,
+                    end_date: lastDate.subtract(1, "days").format("YYYYMMDD"),
+                };
+            }
+            return null;
+        }
     );
     return data && data.data;
 }
