@@ -36,6 +36,8 @@ const fieldNames = {
     start_date: "开始日期",
     end_date: "结束日期",
     is_open: "是否交易 0 休市 1交易",
+    cal_date: "日历日期",
+    pretrade_date: "上一个交易日",
     ann_date: "公告日期（YYYYMMDD格式）",
     change_reason: "变更原因",
 
@@ -118,12 +120,36 @@ const indexMarketList = [
     // {code: "SW", name: "申万指数"},
     // {code: "OTH", name: "其他指数"},
 ];
+const exchangeList = [
+    { code: "SSE", name: "上交所" },
+    { code: "SZSE", name: "深交所" },
 
+    // { code: "CFFEX", name: "中金所" },
+    // { code: "SHFE", name: "上期所" },
+    // { code: "CZCE", name: "郑商所" },
+    // { code: "DCE", name: "大商所" },
+    // { code: "INE", name: "上能源" },
+    // { code: "IB", name: "银行间" },
+    // { code: "XHKG", name: "港交所" },
+];
+const queryStockInfoApiNames = {
+    daily: "daily",
+    adjustFactor: "adj_factor",
+    suspendInfo: "suspend_d",
+    dailyBasic: "daily_basic",
+    moneyFlow: "moneyflow",
+    indexBasic: "index_basic",
+    indexDaily: "index_daily",
+    income: "income",
+};
 const apiNames = {
     stockBasic: "stock_basic",
     stockCompany: "stock_company",
     stockManagers: "stk_managers",
     stockRewards: "stk_rewards",
+    // 接口：trade_cal
+    // 描述：获取各大交易所交易日历数据,默认提取的是上交所
+    tradeCalendar: "trade_cal",
     newShare: "new_share",
     // 接口：daily，日线行情
     // 数据说明：交易日每天15点～16点之间。本接口是未复权行情，停牌期间不提供数据。
@@ -199,6 +225,7 @@ const apiFields = {
     stockManagers:
         "ts_code,ann_date,name,gender,lev,title,edu,national,birthday,begin_date,end_date,resume",
     stockRewards: "ts_code,ann_date,end_date,name,title,reward,hold_vol",
+    tradeCalendar: "exchange,cal_date,is_open,pretrade_date",
     newShare:
         "ts_code,sub_code,name,ipo_date,issue_date,amount,market_amount,price,pe,limit_amount,funds,ballot",
     daily:
@@ -758,6 +785,90 @@ async function indexBasic(market) {
     return data && data.data;
 }
 
+/**
+ * 查询指定交易所的交易日历数据
+ * @param {string} exchange 交易所代码
+ * @param {string} startDate 查询开始日期，YYYYMMDD
+ * @param {string} endDate 查询结束日期，YYYYMMDD
+ */
+async function tradeCalendar(exchange, startDate = null, endDate = null) {
+    if (_.isEmpty(exchange)) {
+        return new Error(apiNames.tradeCalendar + "需要设置查询的交易所代码");
+    }
+    let data = await queryData(
+        apiNames.tradeCalendar,
+        {
+            exchange,
+            start_date: startDate,
+            end_date: endDate,
+        },
+        apiFields.tradeCalendar,
+        async (params, retData) => {
+            if (retData && retData.length > 0) {
+                let lastDate = moment(
+                    retData[retData.length - 1].cal_date,
+                    "YYYYMMDD"
+                );
+                return {
+                    exchange,
+                    start_date: startDate,
+                    end_date: lastDate.subtract(1, "days").format("YYYYMMDD"),
+                };
+            }
+            return null;
+        }
+    );
+    return data && data.data;
+}
+
+/**
+ * 符合使用代码，开始日期，结束日期查询接口的通用访问，比较适合于个股数据
+ * @param {string} apiName 接口名称，可以用apiNames常量表获取
+ * @param {string} tsCode 代码，不一定是股票代码，也可能是市场代码或其它
+ * @param {string} startDate 查询开始日期，YYYYMMDD
+ * @param {string} endDate 查询结束日期，YYYYMMDD
+ * @param {string} returnDateFiled 返回数据中用于确定处理更多数据时候使用的日期字段，默认为trade_date
+ * @returns {Array} 返回查询到的全部数据
+ */
+async function queryStockInfo(
+    apiName,
+    tsCode,
+    startDate = null,
+    endDate = null,
+    returnDateFiled = "trade_date"
+) {
+    if (_.isEmpty(apiName) || queryStockInfoApiNames.hasOwnProperty(apiName)) {
+        return new Error("没有设置要调取的接口名称或者接口不支持！" + apiName);
+    }
+    if (_.isEmpty(tsCode)) {
+        return new Error(apiName + "需要设置查询的代码");
+    }
+    let data = await queryData(
+        apiName,
+        {
+            ts_code: tsCode,
+            start_date: startDate,
+            end_date: endDate,
+        },
+        apiFields[apiName],
+        async (params, retData) => {
+            if (retData && retData.length > 0) {
+                let lastDate = moment(
+                    retData[retData.length - 1][returnDateFiled],
+                    "YYYYMMDD"
+                );
+                return {
+                    ts_code: tsCode,
+                    start_date: startDate,
+                    end_date: lastDate.subtract(1, "days").format("YYYYMMDD"),
+                };
+            }
+            return null;
+        }
+    );
+    return data && data.data;
+}
+
 function showInfo() {
     return `共发送请求${requestCount}个，收到${responseCount}个返回，其中${errorCount}个错误`;
 }
@@ -774,8 +885,12 @@ module.exports = {
     dailyBasic,
     indexBasic,
     indexDaily,
+    tradeCalendar,
+    queryStockInfo,
+    exchangeList,
     globalIndexList,
     indexMarketList,
     fieldNames,
+    queryStockInfoApiNames,
     showInfo,
 };
