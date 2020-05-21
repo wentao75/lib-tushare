@@ -908,6 +908,24 @@ const stockDataNames = {
     disclosureDate: "disclosureDate",
 };
 
+const returnDateFields = {
+    daily: "trade_date",
+    adjustFactor: "trade_date",
+    suspendInfo: "trade_date",
+    dailyBasic: "trade_date",
+    moneyFlow: "trade_date",
+    indexDailyBasic: "trade_date",
+    indexDaily: "trade_date",
+    income: "ann_date",
+    balanceSheet: "ann_date",
+    cashFlow: "ann_date",
+    forecast: "ann_date",
+    express: "ann_date",
+    dividend: "end_date",
+    financialIndicator: "ann_date",
+    financialMainbiz: "end_date",
+    disclosureDate: "ann_date",
+};
 /**
  * 对应apiNames，返回字段中用来标记日期的字段名称
  */
@@ -950,9 +968,7 @@ async function queryStockInfo(
         endDate = moment().format("YYYYMMDD");
     }
 
-    let returnField = isStockInfo
-        ? stockInfoReturnDateField
-        : stockFinancialInfoReturnDateField;
+    let returnField = returnDateFields[dataName];
     logger.debug(
         `个股数据参数：${dataName}, ${tsCode}, ${isStockInfo}, ${apiName}, ${startDate}, ${endDate}, ${returnField}`
     );
@@ -967,6 +983,10 @@ async function queryStockInfo(
         apiFields[apiName],
         async (params, retData) => {
             if (retData && retData.length > 0) {
+                logger.debug(
+                    `处理日期，${returnField}, %o`,
+                    retData[retData.length - 1]
+                );
                 let lastDate = moment(
                     retData[retData.length - 1][returnField],
                     "YYYYMMDD"
