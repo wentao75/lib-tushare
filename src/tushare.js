@@ -314,15 +314,16 @@ const FLOW_CONFIG = {
     [apiNames.adjustFactor]: { maxFlow: 800 },
     [apiNames.dailyBasic]: { maxFlow: 400 },
     [apiNames.financialMainbiz]: { maxFlow: 60 },
-    [DEFAULT_FLOWCONTROL_NAME]: { maxFlow: 800 },
+    [apiNames.financialIndicator]: { maxFlow: 200 },
+    [apiNames.forecast]: { maxFlow: 200 },
+    [apiNames.cashFlow]: { maxFlow: 200 },
+    [apiNames.balanceSheet]: { maxFlow: 200 },
+    [apiNames.disclosureDate]: { maxFlow: 200 },
+    [apiNames.income]: { maxFlow: 200 },
+    [apiNames.dividend]: { maxFlow: 300 },
+    [apiNames.pledgeDetail]: { maxFlow: 200 },
+    [DEFAULT_FLOWCONTROL_NAME]: { maxFlow: 6000 },
 };
-
-// const MAX_WORKER = 20
-// const MAX_FLOW = 300
-// 流控池，每个协议定义自己的流控
-// const flowControl = {
-//     daily: new FlowControl(MAX_WORKER, MAX_FLOW, "tushare流控"),
-// }
 
 function initFlowControl() {
     let tmp = {};
@@ -382,101 +383,93 @@ async function queryData(
         fc = flowControls[DEFAULT_FLOWCONTROL_NAME];
     }
     // logger.debug("use flow control: ", api, fc, typeof fc)
-    const response = await fc.call(axios.post, tushareUrl, {
-        api_name: api,
-        token: process.env.TUSHARE_TOKEN,
-        params,
-        fields: fields,
-    });
+    try {
+        const response = await fc.call(axios.post, tushareUrl, {
+            api_name: api,
+            token: process.env.TUSHARE_TOKEN,
+            params,
+            fields: fields,
+        });
 
-    // const response = await axios.post(tushareUrl, {
-    //     api_name: api,
-    //     token: process.env.TUSHARE_TOKEN,
-    //     params,
-    //     fields: fields,
-    // })
+        responseCount++;
+        if (response && response.data && response.data.code === 0) {
+            let fields = response.data.data.fields;
+            let items = response.data.data.items;
+            let hasMore = response.data.data.has_more;
 
-    // .then(function (response) {
-    // logger.log(response)
-    responseCount++;
-    if (response && response.data && response.data.code === 0) {
-        let fields = response.data.data.fields;
-        let items = response.data.data.items;
-        let hasMore = response.data.data.has_more;
-
-        logger.debug(
-            "收到服务器响应：字段数量=%d, 数据长度=%d，是否还有更多数据：%s；请求信息 %s，%o",
-            fields.length,
-            items.length,
-            hasMore,
-            api,
-            params
-        );
-        let data = await constructData({ fields, items });
-        // logger.log("constructed data:", data.length)
-
-        // 这里考虑在hasMore为true，并且传入了hasMoreParams方法的情况下执行更多数据获取的逻辑
-        if (hasMore && hasMoreParams && _.isFunction(hasMoreParams)) {
-            let nextParams = await hasMoreParams(params, data);
             logger.debug(
-                "有更多数据需要获取：%o, %o, %d",
-                params,
-                nextParams,
-                data && data.length
+                "收到服务器响应：字段数量=%d, 数据长度=%d，是否还有更多数据：%s；请求信息 %s，%o",
+                fields.length,
+                items.length,
+                hasMore,
+                api,
+                params
             );
-            // 如果无法设置参数，会返回空，这里就不再继续获取
-            if (nextParams) {
-                let moreRetData = await queryData(
-                    api,
+            let data = await constructData({ fields, items });
+            // logger.log("constructed data:", data.length)
+
+            // 这里考虑在hasMore为true，并且传入了hasMoreParams方法的情况下执行更多数据获取的逻辑
+            if (hasMore && hasMoreParams && _.isFunction(hasMoreParams)) {
+                let nextParams = await hasMoreParams(params, data);
+                logger.debug(
+                    "有更多数据需要获取：%o, %o, %d",
+                    params,
                     nextParams,
-                    fields,
-                    hasMoreParams,
-                    moreDatas
+                    data && data.length
                 );
-                hasMore = moreRetData && moreRetData.hasMore;
-                let moreData = moreRetData && moreRetData.data;
-
-                if (moreDatas && _.isFunction(moreDatas)) {
-                    logger.debug(
-                        "更多数据调用合并: %d && %d",
-                        data.length,
-                        moreData.length
+                // 如果无法设置参数，会返回空，这里就不再继续获取
+                if (nextParams) {
+                    let moreRetData = await queryData(
+                        api,
+                        nextParams,
+                        fields,
+                        hasMoreParams,
+                        moreDatas
                     );
-                    data = await moreDatas(data, moreData && moreData.data);
+                    hasMore = moreRetData && moreRetData.hasMore;
+                    let moreData = moreRetData && moreRetData.data;
+
+                    if (moreDatas && _.isFunction(moreDatas)) {
+                        logger.debug(
+                            "更多数据调用合并: %d && %d",
+                            data.length,
+                            moreData.length
+                        );
+                        data = await moreDatas(data, moreData && moreData.data);
+                    } else {
+                        logger.debug(
+                            "更多数据自动合并: %d && %d",
+                            data.length,
+                            moreData.length
+                        );
+                        data.push(...moreData);
+                    }
                 } else {
-                    logger.debug(
-                        "更多数据自动合并: %d && %d",
-                        data.length,
-                        moreData.length
-                    );
-                    data.push(...moreData);
+                    hasMore = false;
                 }
-            } else {
-                hasMore = false;
             }
+
+            return {
+                data,
+                hasMore,
+            };
         }
-
-        return {
-            data,
-            hasMore,
-        };
+        errorCount++;
+        logger.error(
+            "发现错误(请求信息 %s, %o)：%s, %s",
+            api,
+            params,
+            response.data.code,
+            response.data.msg
+        );
+        throw new Error(
+            "接口返回错误[" + response.data.code + "]:" + response.data.msg
+        );
+    } catch (error) {
+        logger.error(`数据接口处理过程发生未知异常：${error}`);
+        throw error;
     }
-    errorCount++;
-    logger.error(
-        "发现错误(请求信息 %s, %o)：%s, %s",
-        api,
-        params,
-        response.data.code,
-        response.data.msg
-    );
-    throw new Error(
-        "接口返回错误[" + response.data.code + "]:" + response.data.msg
-    );
 }
-
-// async function queryDataLimit(api, params, fields) {
-//     return flowControl.call(queryData, api, params, fields)
-// }
 
 /**
  * 重构接口返回数据
@@ -502,15 +495,20 @@ async function constructData(data) {
 }
 
 async function stockBasic(exchange = "", listStatus = "L") {
-    let data = await queryData(
-        apiNames.stockBasic,
-        {
-            exchange,
-            list_status: listStatus,
-        },
-        apiFields.stockBasic
-    );
-    return data && data.data;
+    try {
+        let data = await queryData(
+            apiNames.stockBasic,
+            {
+                exchange,
+                list_status: listStatus,
+            },
+            apiFields.stockBasic
+        );
+        return data && data.data;
+    } catch (error) {
+        logger.error(`查询股票列表发生未知异常：${error}`);
+        return [];
+    }
 }
 
 async function stockCompany(tsCode, exchange) {
@@ -551,183 +549,37 @@ async function stockManagers(tsCode = "", annDate = "", startDate, endDate) {
     return data && data.data;
 }
 
-/**
- * 这个方法用来读取指定股票代码的历史数据，如果startDate未设置，则需要获取全部
- * 如果startDate未设置，需要读取最新
- * @param {string} tsCode 代码
- * @param {string} startDate 开始日期
- * @param {string} endDate 结束日期
- */
-async function stockDaily(tsCode, startDate = "", endDate = "") {
-    if (_.isEmpty(tsCode)) {
-        return new Error("日线行情数据代码设置错误！");
+const stockInfo2Params = {
+    dividend: {
+        name: "dividend",
+        api: apiNames.dividend,
+    },
+    pledgeStat: {
+        name: "pledgeStat",
+        api: apiNames.pledgeState,
+    },
+    pledgeDetail: {
+        name: "pledgeDetail",
+        api: apiNames.pledgeDetail,
+    },
+};
+
+async function queryStockInfo2(dataName, tsCode) {
+    let stockParams = stockInfo2Params[dataName];
+
+    if (!stockParams) {
+        return new Error("没有设置要调取的接口名称或者接口不支持！");
     }
 
-    if (_.isEmpty(startDate)) {
-        // 需要设置开始日期
-        startDate = "19901101";
-    }
-    if (_.isEmpty(endDate)) {
-        endDate = moment().format("YYYYMMDD");
-    }
+    let apiName = stockParams.api;
+    if (_.isEmpty(tsCode)) return new Error("个股信息未指定代码");
 
     let data = await queryData(
-        apiNames.daily,
+        apiName,
         {
             ts_code: tsCode,
-            start_date: startDate,
-            end_date: endDate,
         },
-        apiFields.daily,
-        async (params, retData) => {
-            // let endDate = ""
-            if (retData && retData.length > 0) {
-                let lastDate = moment(
-                    retData[retData.length - 1].trade_date,
-                    "YYYYMMDD"
-                );
-                // endDate =
-                return {
-                    ts_code: tsCode,
-                    start_date: startDate,
-                    end_date: lastDate.subtract(1, "days").format("YYYYMMDD"),
-                };
-            }
-            return null;
-        }
-    );
-    logger.debug(
-        `获得日线数据 ${tsCode}, 条数=${data && data.data && data.data.length}`
-    );
-    return data && data.data;
-    // let hasMore = true
-    // let retData = []
-    // while (hasMore) {
-    //     let data = null
-    //     // 计算下一个日期范围
-    //     if (retData.length > 0) {
-    //         let lastDate = moment(retData[retData.length - 1].trade_date, "YYYYMMDD")
-    //         endDate = lastDate.subtract(1, "days").format("YYYYMMDD")
-    //     }
-
-    //     logger.debug("stock daily query: ", tsCode, startDate, endDate)
-
-    //     // eslint-disable-next-line no-await-in-loop
-    //     let tmp = await queryData(
-    //         apiNames.daily,
-    //         {
-    //             ts_code: tsCode,
-    //             start_date: startDate,
-    //             end_date: endDate,
-    //         },
-    //         apiFields.daily
-    //     )
-    //     hasMore = tmp && tmp.hasMore
-    //     data = tmp && tmp.data
-
-    //     if (data && data.length > 0) {
-    //         retData.push(...data)
-    //     }
-    //     logger.debug("stock daily read: ", tsCode, data && data.length, hasMore, retData && retData.length)
-    // }
-    // return retData
-}
-
-/**
- * 这个方法用来读取指定指数代码的历史数据，如果startDate未设置，则需要获取全部
- * 如果startDate未设置，需要读取最新
- * @param {string} tsCode 代码
- * @param {string} startDate 开始日期
- * @param {string} endDate 结束日期
- */
-async function indexDaily(tsCode, startDate = "", endDate = "") {
-    if (_.isEmpty(tsCode)) {
-        return new Error("指数日线数据代码设置错误！");
-    }
-
-    if (_.isEmpty(startDate)) {
-        // 需要设置开始日期
-        startDate = "19901101";
-    }
-    if (_.isEmpty(endDate)) {
-        endDate = moment().format("YYYYMMDD");
-    }
-
-    let data = await queryData(
-        apiNames.indexDaily,
-        {
-            ts_code: tsCode,
-            start_date: startDate,
-            end_date: endDate,
-        },
-        apiFields.indexDaily,
-        async (params, retData) => {
-            let endDate = "";
-            if (retData && retData.length > 0) {
-                let lastDate = moment(
-                    retData[retData.length - 1].trade_date,
-                    "YYYYMMDD"
-                );
-                endDate = lastDate.subtract(1, "days").format("YYYYMMDD");
-                return {
-                    ts_code: tsCode,
-                    start_date: startDate,
-                    end_date: endDate,
-                };
-            }
-            return null;
-        }
-    );
-    logger.debug(
-        `获得指数日线数据 ${tsCode}, 条数=${
-            data && data.data && data.data.length
-        }`
-    );
-    return data && data.data;
-}
-
-/**
- * 提供一只股票指定时间范围的全部复权因子数据，这个数据可以在日线历史数据中配合使用
- * @param {string} tsCode 股票代码
- * @param {string} startDate 读取复权因子的开始日期 YYYYMMDD
- * @param {string} endDate 读取复权因子的结束日期 YYYYMMDD
- */
-async function adjustFactor(tsCode, startDate = "", endDate = "") {
-    if (_.isEmpty(tsCode)) {
-        return new Error("读取复权因子需要设置股票代码");
-    }
-    if (_.isEmpty(startDate)) {
-        // 需要设置开始日期
-        startDate = "19901101";
-    }
-    if (_.isEmpty(endDate)) {
-        endDate = moment().format("YYYYMMDD");
-    }
-
-    let data = await queryData(
-        apiNames.adjustFactor,
-        {
-            ts_code: tsCode,
-            start_date: startDate,
-            end_date: endDate,
-        },
-        apiFields.adjustFactor,
-        async (params, retData) => {
-            // let endDate = ""
-            if (retData && retData.length > 0) {
-                let lastDate = moment(
-                    retData[retData.length - 1].trade_date,
-                    "YYYYMMDD"
-                );
-                // endDate =
-                return {
-                    ts_code: tsCode,
-                    start_date: startDate,
-                    end_date: lastDate.subtract(1, "days").format("YYYYMMDD"),
-                };
-            }
-            return null;
-        }
+        apiFields[apiName]
     );
     return data && data.data;
 }
@@ -741,14 +593,19 @@ async function suspendList(tradeDate) {
         tradeDate = moment().format("YYYYMMDD");
     }
 
-    let data = await queryData(
-        apiNames.suspendInfo,
-        {
-            trade_date: tradeDate,
-        },
-        apiFields.suspendInfo
-    );
-    return data && data.data;
+    try {
+        let data = await queryData(
+            apiNames.suspendInfo,
+            {
+                trade_date: tradeDate,
+            },
+            apiFields.suspendInfo
+        );
+        return data && data.data;
+    } catch (error) {
+        logger.error(`查询指定日期全部停复盘信息发生未知异常：${error}`);
+        return [];
+    }
 }
 
 /**
@@ -760,52 +617,19 @@ async function dailyBasicList(tradeDate = null) {
         tradeDate = moment().format("YYYYMMDD");
     }
 
-    let data = await queryData(
-        apiNames.dailyBasic,
-        {
-            trade_date: tradeDate,
-        },
-        apiFields.dailyBasic
-    );
-    return data && data.data;
-}
-
-/**
- * 获取指定日期范围股票的全部基本面列表
- * @param {string} tsCode 代码
- * @param {string} startDate 开始日期 YYYYMMDD
- * @param {string} endDate 结束日期 YYYYMMDD
- */
-async function dailyBasic(tsCode, startDate = null, endDate = null) {
-    if (_.isEmpty(tsCode)) {
-        return new Error(apiNames.dailyBasic + "需要设置查询的股票代码");
+    try {
+        let data = await queryData(
+            apiNames.dailyBasic,
+            {
+                trade_date: tradeDate,
+            },
+            apiFields.dailyBasic
+        );
+        return data && data.data;
+    } catch (error) {
+        logger.error(`查询指定日期全部股票基本面信息发生未知异常：${error}`);
+        return [];
     }
-    let data = await queryData(
-        apiNames.dailyBasic,
-        {
-            ts_code: tsCode,
-            start_date: startDate,
-            end_date: endDate,
-        },
-        apiFields.dailyBasic,
-        async (params, retData) => {
-            // let endDate = ""
-            if (retData && retData.length > 0) {
-                let lastDate = moment(
-                    retData[retData.length - 1].trade_date,
-                    "YYYYMMDD"
-                );
-                // endDate =
-                return {
-                    ts_code: tsCode,
-                    start_date: startDate,
-                    end_date: lastDate.subtract(1, "days").format("YYYYMMDD"),
-                };
-            }
-            return null;
-        }
-    );
-    return data && data.data;
 }
 
 /**
@@ -817,15 +641,20 @@ async function indexBasic(market) {
         return new Error("获取指数信息列表需要设置市场或服务商");
     }
 
-    let data = await queryData(
-        apiNames.indexBasic,
-        {
-            market,
-        },
-        apiFields.indexBasic
-    );
+    try {
+        let data = await queryData(
+            apiNames.indexBasic,
+            {
+                market,
+            },
+            apiFields.indexBasic
+        );
 
-    return data && data.data;
+        return data && data.data;
+    } catch (error) {
+        logger.error(`查询指数基础信息列表发生未知异常：${error}`);
+        return [];
+    }
 }
 
 /**
@@ -838,55 +667,115 @@ async function tradeCalendar(exchange, startDate = null, endDate = null) {
     if (_.isEmpty(exchange)) {
         return new Error(apiNames.tradeCalendar + "需要设置查询的交易所代码");
     }
-    let data = await queryData(
-        apiNames.tradeCalendar,
-        {
-            exchange,
-            start_date: startDate,
-            end_date: endDate,
-        },
-        apiFields.tradeCalendar,
-        async (params, retData) => {
-            if (retData && retData.length > 0) {
-                let lastDate = moment(
-                    retData[retData.length - 1].cal_date,
-                    "YYYYMMDD"
-                );
-                return {
-                    exchange,
-                    start_date: startDate,
-                    end_date: lastDate.subtract(1, "days").format("YYYYMMDD"),
-                };
+    try {
+        let data = await queryData(
+            apiNames.tradeCalendar,
+            {
+                exchange,
+                start_date: startDate,
+                end_date: endDate,
+            },
+            apiFields.tradeCalendar,
+            async (params, retData) => {
+                if (retData && retData.length > 0) {
+                    let lastDate = moment(
+                        retData[retData.length - 1].cal_date,
+                        "YYYYMMDD"
+                    );
+                    return {
+                        exchange,
+                        start_date: startDate,
+                        end_date: lastDate
+                            .subtract(1, "days")
+                            .format("YYYYMMDD"),
+                    };
+                }
+                return null;
             }
-            return null;
-        }
-    );
-    return data && data.data;
+        );
+        return data && data.data;
+    } catch (error) {
+        logger.error(`查询交易所日历数据发生未知异常：${error}`);
+        return [];
+    }
 }
 
 /**
- * 可以支持queryStockInfo接口的apiNames
+ * 可以支持queryStockInfo接口的参数配置
  */
-const queryStockInfoApiNames = {
-    daily: apiNames.daily,
-    adjustFactor: apiNames.adjustFactor,
-    suspendInfo: apiNames.suspendInfo,
-    dailyBasic: apiNames.dailyBasic,
-    moneyFlow: apiNames.moneyFlow,
-    indexDailyBasic: apiNames.indexDailyBasic,
-    indexDaily: apiNames.indexDaily,
-};
-
-const queryStockFinancialInfoApiNames = {
-    income: apiNames.income,
-    balanceSheet: apiNames.balanceSheet,
-    cashFlow: apiNames.cashFlow,
-    forecast: apiNames.forecast,
-    express: apiNames.express,
-    dividend: apiNames.dividend,
-    financialIndicator: apiNames.financialIndicator,
-    financialMainbiz: apiNames.financialMainbiz,
-    disclosureDate: apiNames.disclosureDate,
+const stockInfoParams = {
+    daily: {
+        name: "daily",
+        api: apiNames.daily,
+        returnDateFiled: "trade_date",
+    },
+    adjustFactor: {
+        name: "adjustFactor",
+        api: apiNames.adjustFactor,
+        returnDateFiled: "trade_date",
+    },
+    suspendInfo: {
+        name: "suspendInfo",
+        api: apiNames.suspendInfo,
+        returnDateFiled: "trade_date",
+    },
+    dailyBasic: {
+        name: "dailyBasic",
+        api: apiNames.dailyBasic,
+        returnDateFiled: "trade_date",
+    },
+    moneyFlow: {
+        name: "moneyFlow",
+        api: apiNames.moneyFlow,
+        returnDateFiled: "trade_date",
+    },
+    // indexDailyBasic: { name: "indexDailyBasic", api: apiNames.indexDailyBasic, returnDateFiled: "trade_date",},
+    indexDaily: {
+        name: "indexDaily",
+        api: apiNames.indexDaily,
+        returnDateFiled: "trade_date",
+    },
+    income: {
+        name: "income",
+        api: apiNames.income,
+        returnDateFiled: "ann_date",
+    },
+    balanceSheet: {
+        name: "balanceSheet",
+        api: apiNames.balanceSheet,
+        returnDateFiled: "ann_date",
+    },
+    cashFlow: {
+        name: "cashFlow",
+        api: apiNames.cashFlow,
+        returnDateFiled: "ann_date",
+    },
+    forecast: {
+        name: "forecast",
+        api: apiNames.forecast,
+        returnDateFiled: "ann_date",
+    },
+    express: {
+        name: "express",
+        api: apiNames.express,
+        returnDateFiled: "ann_date",
+    },
+    dividend: {
+        name: "dividend",
+        api: apiNames.dividend,
+        returnDateFiled: "end_date",
+    },
+    financialIndicator: {
+        name: "financialIndicator",
+        api: apiNames.financialIndicator,
+        returnDateFiled: "ann_date",
+    },
+    financialMainbiz: {
+        name: "financialMainbiz",
+        api: apiNames.financialMainbiz,
+        returnDateFiled: "end_date",
+    },
+    disclosureDate: { name: "disclosureDate", api: apiNames.disclosureDate },
 };
 
 const stockDataNames = {
@@ -895,42 +784,21 @@ const stockDataNames = {
     suspendInfo: "suspendInfo",
     dailyBasic: "dailyBasic",
     moneyFlow: "moneyFlow",
-    indexDailyBasic: "indexDailyBasic",
+    // indexDailyBasic: "indexDailyBasic",
     indexDaily: "indexDaily",
     income: "income",
     balanceSheet: "balanceSheet",
     cashFlow: "cashFlow",
     forecast: "forecast",
     express: "express",
-    dividend: "dividend",
     financialIndicator: "financialIndicator",
     financialMainbiz: "financialMainbiz",
     disclosureDate: "disclosureDate",
-};
 
-const returnDateFields = {
-    daily: "trade_date",
-    adjustFactor: "trade_date",
-    suspendInfo: "trade_date",
-    dailyBasic: "trade_date",
-    moneyFlow: "trade_date",
-    indexDailyBasic: "trade_date",
-    indexDaily: "trade_date",
-    income: "ann_date",
-    balanceSheet: "ann_date",
-    cashFlow: "ann_date",
-    forecast: "ann_date",
-    express: "ann_date",
-    dividend: "end_date",
-    financialIndicator: "ann_date",
-    financialMainbiz: "end_date",
-    disclosureDate: "ann_date",
+    dividend: "dividend",
+    pledgeStat: "pledgeStat",
+    pledgeDetail: "pledgeDetail",
 };
-/**
- * 对应apiNames，返回字段中用来标记日期的字段名称
- */
-const stockInfoReturnDateField = "trade_date";
-const stockFinancialInfoReturnDateField = "ann_date";
 
 /**
  * 符合使用代码，开始日期，结束日期查询接口的通用访问，比较适合于个股数据
@@ -947,16 +815,21 @@ async function queryStockInfo(
     startDate = null,
     endDate = null
 ) {
-    let isStockInfo = !!queryStockInfoApiNames[dataName];
-    let isStockFinancialInfo = !!queryStockFinancialInfoApiNames[dataName];
+    if (stockInfo2Params[dataName]) {
+        return queryStockInfo2(dataName, tsCode);
+    }
 
-    if (!isStockInfo && !isStockFinancialInfo) {
+    let stockParams = stockInfoParams[dataName];
+    // let isStockInfo = !!queryStockInfoApiNames[dataName];
+    // let isStockFinancialInfo = !!queryStockFinancialInfoApiNames[dataName];
+
+    if (!stockParams) {
         return new Error("没有设置要调取的接口名称或者接口不支持！");
     }
 
-    let apiName =
-        queryStockInfoApiNames[dataName] ||
-        queryStockFinancialInfoApiNames[dataName];
+    let apiName = stockParams.api;
+    // queryStockInfoApiNames[dataName] ||
+    // queryStockFinancialInfoApiNames[dataName];
     if (_.isEmpty(tsCode)) {
         return new Error(dataName + "需要设置查询的代码");
     }
@@ -968,48 +841,56 @@ async function queryStockInfo(
         endDate = moment().format("YYYYMMDD");
     }
 
-    let returnField = returnDateFields[dataName];
+    let returnField = stockParams.returnDateFiled; // returnDateFields[dataName];
     logger.debug(
-        `个股数据参数：${dataName}, ${tsCode}, ${isStockInfo}, ${apiName}, ${startDate}, ${endDate}, ${returnField}`
+        `个股数据参数：${dataName}, ${tsCode}, %o, ${apiName}, ${startDate}, ${endDate}, ${returnField}`,
+        stockParams
     );
 
-    let data = await queryData(
-        apiName,
-        {
-            ts_code: tsCode,
-            start_date: startDate,
-            end_date: endDate,
-        },
-        apiFields[apiName],
-        async (params, retData) => {
-            if (retData && retData.length > 0) {
-                logger.debug(
-                    `处理日期，${returnField}, %o`,
-                    retData[retData.length - 1]
-                );
-                let lastDate = moment(
-                    retData[retData.length - 1][returnField],
-                    "YYYYMMDD"
-                );
-                return {
-                    ts_code: tsCode,
-                    start_date: startDate,
-                    end_date: lastDate.subtract(1, "days").format("YYYYMMDD"),
-                };
+    try {
+        let data = await queryData(
+            apiName,
+            {
+                ts_code: tsCode,
+                start_date: startDate,
+                end_date: endDate,
+            },
+            apiFields[apiName],
+            async (params, retData) => {
+                if (retData && retData.length > 0) {
+                    logger.debug(
+                        `处理日期，${returnField}, %o`,
+                        retData[retData.length - 1]
+                    );
+                    let lastDate = moment(
+                        retData[retData.length - 1][returnField],
+                        "YYYYMMDD"
+                    );
+                    return {
+                        ts_code: tsCode,
+                        start_date: startDate,
+                        end_date: lastDate
+                            .subtract(1, "days")
+                            .format("YYYYMMDD"),
+                    };
+                }
+                return null;
             }
-            return null;
-        }
-    );
-    return [
-        data && data.data,
-        // 最新日期, end_date
-        data && (data.data.length > 0 ? data.data[0][returnField] : null),
-        // 最早日期, start_date
-        data &&
-            (data.data.length > 0
-                ? data.data[data.data.length - 1][returnField]
-                : null),
-    ];
+        );
+        return [
+            data && data.data,
+            // 最新日期, end_date
+            data && (data.data.length > 0 ? data.data[0][returnField] : null),
+            // 最早日期, start_date
+            data &&
+                (data.data.length > 0
+                    ? data.data[data.data.length - 1][returnField]
+                    : null),
+        ];
+    } catch (error) {
+        logger.error(`查询股票数据发生未知异常：${error}`);
+        return [[], null, null];
+    }
 }
 
 function showInfo() {
@@ -1021,13 +902,10 @@ module.exports = {
     stockBasic,
     stockCompany,
     stockManagers,
-    stockDaily,
-    adjustFactor,
+    // stockDividend,
     suspendList,
     dailyBasicList,
-    dailyBasic,
     indexBasic,
-    indexDaily,
     tradeCalendar,
     queryStockInfo,
     exchangeList,
@@ -1036,4 +914,10 @@ module.exports = {
     fieldNames,
     stockDataNames,
     showInfo,
+
+    // stockDaily,
+    // dailyBasic,
+    // adjustFactor,
+    // indexDaily,
+    // stockInfoParams,
 };
