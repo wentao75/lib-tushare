@@ -322,6 +322,7 @@ const FLOW_CONFIG = {
     [apiNames.income]: { maxFlow: 200 },
     [apiNames.dividend]: { maxFlow: 300 },
     [apiNames.pledgeDetail]: { maxFlow: 200 },
+    [apiNames.moneyFlow]: { maxFlow: 300 },
     [DEFAULT_FLOWCONTROL_NAME]: { maxFlow: 6000 },
 };
 
