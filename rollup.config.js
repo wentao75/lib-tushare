@@ -6,7 +6,14 @@ import { name } from "./package.json";
 
 export default {
     input: "src/tushare.js",
-    external: ["moment", "lodash", "axios", "lib-flowcontrol"],
+    external: [
+        "moment",
+        "lodash",
+        "axios",
+        "@wt/lib-flowcontrol",
+        "@wt/lib-taskqueue",
+        "@babel/runtime",
+    ],
     plugins: [
         resolve(),
         babel({
