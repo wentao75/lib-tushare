@@ -10,6 +10,7 @@ export default {
         "moment",
         "lodash",
         "axios",
+        "pino",
         "@wt/lib-flowcontrol",
         "@wt/lib-taskqueue",
         "@babel/runtime",
