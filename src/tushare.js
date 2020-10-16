@@ -16,7 +16,7 @@ const logger = pino({
 });
 
 // const token = ""
-const tushareUrl = "http://api.tushare.pro";
+const tushareUrl = "http://api.waditu.com";
 // 增加一个 fieldNames用来给出每个字段（包括输入/输出的说明）
 const fieldNames = {
     is_hs: "是否沪深港通标的，N否 H沪股通 S深股通",
