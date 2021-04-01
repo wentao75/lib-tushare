@@ -311,7 +311,7 @@ const DEFAULT_FLOWCONTROL_NAME = "默认";
 const FLOW_CONFIG = {
     [apiNames.daily]: { maxFlow: 800 },
     [apiNames.indexDaily]: { maxFlow: 300 },
-    [apiNames.adjustFactor]: { maxFlow: 800 },
+    [apiNames.adjustFactor]: { maxFlow: 500 },
     [apiNames.dailyBasic]: { maxFlow: 400 },
     [apiNames.financialMainbiz]: { maxFlow: 60 },
     [apiNames.financialIndicator]: { maxFlow: 200 },
