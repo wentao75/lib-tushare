@@ -309,9 +309,9 @@ const apiFields = {
 // 或者统一放在一个默认流控池中控制
 const DEFAULT_FLOWCONTROL_NAME = "默认";
 const FLOW_CONFIG = {
-    [apiNames.daily]: { maxFlow: 800 },
+    [apiNames.daily]: { maxFlow: 500 },
     [apiNames.indexDaily]: { maxFlow: 300 },
-    [apiNames.adjustFactor]: { maxFlow: 800 },
+    [apiNames.adjustFactor]: { maxFlow: 500 },
     [apiNames.dailyBasic]: { maxFlow: 400 },
     [apiNames.financialMainbiz]: { maxFlow: 60 },
     [apiNames.financialIndicator]: { maxFlow: 200 },
@@ -323,7 +323,7 @@ const FLOW_CONFIG = {
     [apiNames.dividend]: { maxFlow: 300 },
     [apiNames.pledgeDetail]: { maxFlow: 200 },
     [apiNames.moneyFlow]: { maxFlow: 300 },
-    [DEFAULT_FLOWCONTROL_NAME]: { maxFlow: 6000 },
+    [DEFAULT_FLOWCONTROL_NAME]: { maxFlow: 200 },
 };
 
 function initFlowControl() {
